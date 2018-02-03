@@ -13,6 +13,8 @@ import (
 	"github.com/KyberNetwork/reserve-data/common"
 )
 
+const BASE_URL = "URL_WHEN_RELEASE"
+
 type Verification struct {
 	app  reserve.ReserveData
 	core reserve.ReserveCore
@@ -62,6 +64,51 @@ func (self *Verification) GetResponse(
 	}
 }
 
+func (self *Verification) GetPendingActivities(timepoint uint64) (common.ActivityRecord, error) {
+	result := common.ActivityRecord{}
+	resp_body, err := self.GetResponse(
+		"GET",
+		self.base + "/pendingactivities",
+		map[string]string{},
+		true,
+		timepoint
+	)
+	if err == nil {
+		err = json.Unmarshal(resp_body, &result)
+	}
+	return result, err
+}
+
+func (self *Verification) GetActivities(timepoint uint64) (common.ActivityRecord, error) {
+	result := common.ActivityRecord{}
+	resp_body, err := self.GetResponse(
+		"GET",
+		self.base + "/activities",
+		map[string]string{},
+		true,
+		timepoint
+	)
+	if err == nil {
+		err = json.Unmarshal(resp_body, &result)
+	}
+	return result, err
+}
+
+func (self *Verification) GetAuthData(timepoint uint64) (common.AuthDataResponse, error) {
+	result := common.AuthDataResponse{}
+	resp_body, err := self.GetResponse(
+		"GET",
+		BASE_URL + "/authdata",
+		map[string]string{},
+		true,
+		timepoint
+	)
+	if err == nil {
+		err = json.Unmarshal(resp_body, &result)
+	}
+	return result, err
+}
+
 func (self *Verification) VerifyDeposit(amount *big.Int) error {
 	var err error
 	timepoint := common.GetTimepoint()
@@ -74,11 +121,20 @@ func (self *Verification) VerifyDeposit(amount *big.Int) error {
 		}
 		// check deposit data from api
 		// pending activities
-		pendingActivities, err := self.GetPendingActivities()
+		pendingActivities, err := self.GetPendingActivities(timepoint)
+		if err != nil {
+			return errors.New(fmt.Sprintf("Deposit error, getting pending activities: %s", err.Error())
+		}
 		// authdata
 		authData, err := self.GetAuthData()
+		if err != nil {
+			return errors.New(fmt.Sprintf("Deposit error, geting authdata: %s", err.Error()))
+		}
 		// activities
 		activities, err := self.GetActivities()
+		if err != nil {
+			return errors.New(fmt.Sprintf("Deposit error, getting activities: %s", err.Error()))
+		}
 	}
 	return err
 }
@@ -92,10 +148,19 @@ func (self *Verification) VerifyWithdraw(amount *big.Int) error {
 		// check withdraw data from api
 		// pending activities
 		pendingActivities, err := self.GetPendingActivities()
+		if err != nil {
+			return errors.New("Withdraw error, getting pending activities: %s", err.Error())
+		}
 		// authdata
 		authdata, err := self.GetAuthData()
+		if err != nil {
+			return errors.New("Withdraw error, getting auth data: %s", err.Error())
+		}
 		// activities
 		activities, err := self.GetActivities()
+		if err != nil {
+			return errors.New("Withdraw error, getting activities: %s", err.Error())
+		}
 	}
 	return err
 }
