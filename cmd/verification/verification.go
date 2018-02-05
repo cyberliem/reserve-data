@@ -1,6 +1,8 @@
 package verification
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -11,13 +13,16 @@ import (
 
 	reserve "github.com/KyberNetwork/reserve-data"
 	"github.com/KyberNetwork/reserve-data/common"
+	ihttp "github.com/KyberNetwork/reserve-data/http"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-const BASE_URL = "URL_WHEN_RELEASE"
+const BASE_URL = "http://localhost:8000"
 
 type Verification struct {
 	app  reserve.ReserveData
 	core reserve.ReserveCore
+	auth ihttp.Authentication
 }
 
 func (self *Verification) fillRequest(req *http.Request, signNeeded bool, timepoint uint64) {
@@ -29,7 +34,7 @@ func (self *Verification) fillRequest(req *http.Request, signNeeded bool, timepo
 		q := req.URL.Query()
 		sig := url.Values{}
 		q.Set("nonce", fmt.Sprintf("%d", timepoint))
-		sig.Set("signature", self.signer.BinanceSign(q.Encode()))
+		sig.Set("signature", self.auth.KNSign(q.Encode()))
 		req.URL.RawQuery = q.Encode() + "&" + sig.Encode()
 	}
 }
@@ -68,10 +73,10 @@ func (self *Verification) GetPendingActivities(timepoint uint64) (common.Activit
 	result := common.ActivityRecord{}
 	resp_body, err := self.GetResponse(
 		"GET",
-		self.base + "/pendingactivities",
+		BASE_URL+"/immediate-pending-activities",
 		map[string]string{},
 		true,
-		timepoint
+		timepoint,
 	)
 	if err == nil {
 		err = json.Unmarshal(resp_body, &result)
@@ -83,10 +88,10 @@ func (self *Verification) GetActivities(timepoint uint64) (common.ActivityRecord
 	result := common.ActivityRecord{}
 	resp_body, err := self.GetResponse(
 		"GET",
-		self.base + "/activities",
+		BASE_URL+"/activities",
 		map[string]string{},
 		true,
-		timepoint
+		timepoint,
 	)
 	if err == nil {
 		err = json.Unmarshal(resp_body, &result)
@@ -98,10 +103,10 @@ func (self *Verification) GetAuthData(timepoint uint64) (common.AuthDataResponse
 	result := common.AuthDataResponse{}
 	resp_body, err := self.GetResponse(
 		"GET",
-		BASE_URL + "/authdata",
+		BASE_URL+"/authdata",
 		map[string]string{},
 		true,
-		timepoint
+		timepoint,
 	)
 	if err == nil {
 		err = json.Unmarshal(resp_body, &result)
@@ -112,29 +117,33 @@ func (self *Verification) GetAuthData(timepoint uint64) (common.AuthDataResponse
 func (self *Verification) VerifyDeposit(amount *big.Int) error {
 	var err error
 	timepoint := common.GetTimepoint()
-	token := common.GetToken("ETH")
+	token, _ := common.GetToken("ETH")
 	// deposit to exchanges
 	for _, exchange := range common.SupportedExchanges {
 		activityID, err := self.core.Deposit(exchange, token, amount, timepoint)
 		if err != nil {
-			return err
+			return errors.New(fmt.Sprintf("Cannot deposit: %s", err.Error()))
 		}
+		log.Printf("Deposit id: %s", activityID)
 		// check deposit data from api
 		// pending activities
 		pendingActivities, err := self.GetPendingActivities(timepoint)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Deposit error, getting pending activities: %s", err.Error())
+			return errors.New(fmt.Sprintf("Deposit error, getting pending activities: %s", err.Error()))
 		}
+		log.Printf("Pending activities after deposit: %v", pendingActivities)
 		// authdata
-		authData, err := self.GetAuthData()
+		authData, err := self.GetAuthData(timepoint)
 		if err != nil {
 			return errors.New(fmt.Sprintf("Deposit error, geting authdata: %s", err.Error()))
 		}
+		log.Printf("Auth data after deposit: %v", authData)
 		// activities
-		activities, err := self.GetActivities()
+		activities, err := self.GetActivities(timepoint)
 		if err != nil {
 			return errors.New(fmt.Sprintf("Deposit error, getting activities: %s", err.Error()))
 		}
+		log.Printf("Activity data after deposit: %v", activities)
 	}
 	return err
 }
@@ -142,34 +151,58 @@ func (self *Verification) VerifyDeposit(amount *big.Int) error {
 func (self *Verification) VerifyWithdraw(amount *big.Int) error {
 	var err error
 	timepoint := common.GetTimepoint()
-	token := common.GetToken("ETH")
+	token, _ := common.GetToken("ETH")
 	for _, exchange := range common.SupportedExchanges {
 		activityID, err := self.core.Withdraw(exchange, token, amount, timepoint)
+		if err != nil {
+			log.Printf("Cannot withdraw: %s", err.Error())
+		}
+		log.Printf("Withdraw ID: %s", activityID)
 		// check withdraw data from api
 		// pending activities
-		pendingActivities, err := self.GetPendingActivities()
+		pendingActivities, err := self.GetPendingActivities(timepoint)
 		if err != nil {
-			return errors.New("Withdraw error, getting pending activities: %s", err.Error())
+			return errors.New(fmt.Sprintf("Withdraw error, getting pending activities: %s", err.Error()))
 		}
+		log.Printf("Pending activities after withdraw: %v", pendingActivities)
 		// authdata
-		authdata, err := self.GetAuthData()
+		authdata, err := self.GetAuthData(timepoint)
 		if err != nil {
-			return errors.New("Withdraw error, getting auth data: %s", err.Error())
+			return errors.New(fmt.Sprintf("Withdraw error, getting auth data: %s", err.Error()))
 		}
+		log.Printf("Auth data after withdraw: %s", authdata)
 		// activities
-		activities, err := self.GetActivities()
+		activities, err := self.GetActivities(timepoint)
 		if err != nil {
-			return errors.New("Withdraw error, getting activities: %s", err.Error())
+			return errors.New(fmt.Sprintf("Withdraw error, getting activities: %s", err.Error()))
 		}
+		log.Printf("Activities after withdraw: %v", activities)
 	}
+	return err
+}
+
+func (self *Verification) RunVerification() error {
+	amount, _ := hexutil.DecodeBig("1")
+	var err error
+	err = self.VerifyDeposit(amount)
+	if err != nil {
+		log.Printf(err.Error())
+	}
+	// err = self.VerifyWithdraw(amount)
+	// if err != nil {
+	// 	log.Printf(err.Error())
+	// }
+	// log.Printf("Verify deployment successfully")
 	return err
 }
 
 func NewVerification(
 	app reserve.ReserveData,
-	core reserve.ReserveCore) *Verification {
+	core reserve.ReserveCore,
+	auth ihttp.Authentication) *Verification {
 	return &Verification{
 		app,
 		core,
+		auth,
 	}
 }

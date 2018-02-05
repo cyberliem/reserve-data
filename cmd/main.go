@@ -150,5 +150,8 @@ func main() {
 			config.AuthEngine,
 		)
 		server.Run()
+
+		// verifi := verification.NewVerification(app, core, config.AuthEngine)
+		// verifi.RunVerification()
 	}
 }
