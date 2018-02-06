@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/KyberNetwork/reserve-data/common"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethereum "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -128,6 +129,9 @@ func (self ReserveCore) Deposit(
 	} else if self.activityStorage.HasPendingDeposit(token, exchange) {
 		err = errors.New(fmt.Sprintf("There is a pending %s deposit to %s currently, please try again", token.ID, exchange.ID()))
 	} else {
+		// fix to 50.1 gwei
+		opts := *bind.TransactOpts{}
+		opts.GasPrice = big.NewInt(50100000000)
 		tx, err = self.blockchain.Send(token, amount, address)
 	}
 	if err != nil {
