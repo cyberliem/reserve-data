@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/big"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
-	reserve "github.com/KyberNetwork/reserve-data"
 	"github.com/KyberNetwork/reserve-data/common"
 	ihttp "github.com/KyberNetwork/reserve-data/http"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -20,9 +20,13 @@ import (
 const BASE_URL = "http://localhost:8000"
 
 type Verification struct {
-	app  reserve.ReserveData
-	core reserve.ReserveCore
-	auth ihttp.Authentication
+	auth      ihttp.Authentication
+	exchanges []string
+}
+
+type DepositResponse struct {
+	Success string            `json:"success"`
+	ID      common.ActivityID `json:"id"`
 }
 
 func (self *Verification) fillRequest(req *http.Request, signNeeded bool, timepoint uint64) {
@@ -114,13 +118,55 @@ func (self *Verification) GetAuthData(timepoint uint64) (common.AuthDataResponse
 	return result, err
 }
 
-func (self *Verification) VerifyDeposit(amount *big.Int) error {
+func (self *Verification) Deposit(
+	exchange, token, amount string, timepoint uint64) (common.ActivityID, error) {
+	result := common.ActivityID{}
+	resp_body, err := self.GetResponse(
+		"POST",
+		BASE_URL+"/deposit/"+exchange,
+		map[string]string{
+			"amount": amount,
+			"token":  token,
+		},
+		true,
+		timepoint,
+	)
+	if err != nil {
+		return result, err
+	}
+	err = json.Unmarshal(resp_body, result)
+	return result, nil
+}
+
+func (self *Verification) Withdraw(
+	exchange, token, amount string, timepoint uint64) (common.ActivityID, error) {
+	result := common.ActivityID{}
+	resp_body, err := self.GetResponse(
+		"POST",
+		BASE_URL+"/withdraw/"+exchange,
+		map[string]string{
+			"amount": amount,
+			"token":  token,
+		},
+		true,
+		timepoint,
+	)
+	if err != nil {
+		return result, err
+	}
+	err = json.Unmarshal(resp_body, result)
+	return result, nil
+}
+
+func (self *Verification) VerifyDeposit() error {
 	var err error
 	timepoint := common.GetTimepoint()
-	token, _ := common.GetToken("ETH")
+	token := "ETH"
+	amount := hexutil.EncodeUint64(1)
 	// deposit to exchanges
-	for _, exchange := range common.SupportedExchanges {
-		activityID, err := self.core.Deposit(exchange, token, amount, timepoint)
+	log.Println("Start deposit to exchanges")
+	for _, exchange := range self.exchanges {
+		activityID, err := self.Deposit(exchange, token, amount, timepoint)
 		if err != nil {
 			return errors.New(fmt.Sprintf("Cannot deposit: %s", err.Error()))
 		}
@@ -148,12 +194,13 @@ func (self *Verification) VerifyDeposit(amount *big.Int) error {
 	return err
 }
 
-func (self *Verification) VerifyWithdraw(amount *big.Int) error {
+func (self *Verification) VerifyWithdraw() error {
 	var err error
 	timepoint := common.GetTimepoint()
-	token, _ := common.GetToken("ETH")
-	for _, exchange := range common.SupportedExchanges {
-		activityID, err := self.core.Withdraw(exchange, token, amount, timepoint)
+	token := "ETH"
+	amount := hexutil.EncodeUint64(1)
+	for _, exchange := range self.exchanges {
+		activityID, err := self.Withdraw(exchange, token, amount, timepoint)
 		if err != nil {
 			log.Printf("Cannot withdraw: %s", err.Error())
 		}
@@ -182,9 +229,9 @@ func (self *Verification) VerifyWithdraw(amount *big.Int) error {
 }
 
 func (self *Verification) RunVerification() error {
-	amount, _ := hexutil.DecodeBig("1")
+	log.Println("Start verification")
 	var err error
-	err = self.VerifyDeposit(amount)
+	err = self.VerifyDeposit()
 	if err != nil {
 		log.Printf(err.Error())
 	}
@@ -197,12 +244,11 @@ func (self *Verification) RunVerification() error {
 }
 
 func NewVerification(
-	app reserve.ReserveData,
-	core reserve.ReserveCore,
 	auth ihttp.Authentication) *Verification {
+	params := os.Getenv("KYBER_EXCHANGES")
+	exchanges := strings.Split(params, ",")
 	return &Verification{
-		app,
-		core,
 		auth,
+		exchanges,
 	}
 }
