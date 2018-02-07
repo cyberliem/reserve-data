@@ -7,11 +7,12 @@ import (
 )
 
 func main() {
-	fileSigner := signer.NewFileSigner("/go/src/github.com/KyberNetwork/reserve-data/cmd/config.json")
+	fileSigner, _ := signer.NewFileSigner("/go/src/github.com/KyberNetwork/reserve-data/cmd/config.json")
 	hmac512auth := http.KNAuthentication{
 		fileSigner.KNSecret,
 		fileSigner.KNReadOnly,
 		fileSigner.KNConfiguration,
+		fileSigner.KNConfirmConf,
 	}
 	verify := verification.NewVerification(hmac512auth)
 	verify.RunVerification()
