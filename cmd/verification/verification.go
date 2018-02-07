@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -27,6 +28,31 @@ type Verification struct {
 type DepositResponse struct {
 	Success string            `json:"success"`
 	ID      common.ActivityID `json:"id"`
+}
+
+var (
+	Trace   *log.Logger
+	Info    *log.Logger
+	Warning *log.Logger
+	Error   *log.Logger
+)
+
+func InitLogger(
+	traceHandle io.Writer,
+	infoHandle io.Writer,
+	warningHandle io.Writer,
+	errorHandle io.Writer) {
+
+	Trace = log.New(traceHandle,
+		"TRACE: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+
+	Info = log.New(infoHandle,
+		"INFO: ",
+		log.Ldate|log.Ldate|log.Lshortfile)
+	Warning = log.New(warningHandle,
+		"WARNING: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
 }
 
 func (self *Verification) fillRequest(req *http.Request, signNeeded bool, timepoint uint64) {
