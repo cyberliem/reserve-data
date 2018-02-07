@@ -25,9 +25,10 @@ type Verification struct {
 	exchanges []string
 }
 
-type DepositResponse struct {
-	Success string            `json:"success"`
+type DepositWithdrawResponse struct {
+	Success bool              `json:"success"`
 	ID      common.ActivityID `json:"id"`
+	Reason  string            `json:"reason"`
 }
 
 var (
@@ -49,9 +50,12 @@ func InitLogger(
 
 	Info = log.New(infoHandle,
 		"INFO: ",
-		log.Ldate|log.Ldate|log.Lshortfile)
+		log.Ldate|log.Ltime|log.Lshortfile)
 	Warning = log.New(warningHandle,
 		"WARNING: ",
+		log.Ldate|log.Ltime|log.Lshortfile)
+	Error = log.New(errorHandle,
+		"ERROR: ",
 		log.Ldate|log.Ltime|log.Lshortfile)
 }
 
@@ -87,14 +91,13 @@ func (self *Verification) GetResponse(
 	self.fillRequest(req, signNeeded, timepoint)
 	var err error
 	var resp_body []byte
-	log.Printf("request to: %s\n", req.URL)
 	resp, err := client.Do(req)
 	if err != nil {
 		return resp_body, err
 	} else {
 		defer resp.Body.Close()
 		resp_body, err = ioutil.ReadAll(resp.Body)
-		log.Printf("request to %s, got response: %s\n", req.URL, common.TruncStr(resp_body))
+		Info.Printf("request to %s, got response: %s\n", req.URL, common.TruncStr(resp_body))
 		return resp_body, err
 	}
 }
@@ -146,7 +149,7 @@ func (self *Verification) GetAuthData(timepoint uint64) (common.AuthDataResponse
 
 func (self *Verification) Deposit(
 	exchange, token, amount string, timepoint uint64) (common.ActivityID, error) {
-	result := common.ActivityID{}
+	result := DepositWithdrawResponse{}
 	resp_body, err := self.GetResponse(
 		"POST",
 		BASE_URL+"/deposit/"+exchange,
@@ -158,15 +161,18 @@ func (self *Verification) Deposit(
 		timepoint,
 	)
 	if err != nil {
-		return result, err
+		return result.ID, err
 	}
-	err = json.Unmarshal(resp_body, result)
-	return result, nil
+	json.Unmarshal(resp_body, &result)
+	if result.Success != true {
+		err = errors.New(fmt.Sprintf("Cannot deposit: %s", result.Reason))
+	}
+	return result.ID, err
 }
 
 func (self *Verification) Withdraw(
 	exchange, token, amount string, timepoint uint64) (common.ActivityID, error) {
-	result := common.ActivityID{}
+	result := DepositWithdrawResponse{}
 	resp_body, err := self.GetResponse(
 		"POST",
 		BASE_URL+"/withdraw/"+exchange,
@@ -178,10 +184,13 @@ func (self *Verification) Withdraw(
 		timepoint,
 	)
 	if err != nil {
-		return result, err
+		return result.ID, err
 	}
-	err = json.Unmarshal(resp_body, result)
-	return result, nil
+	json.Unmarshal(resp_body, &result)
+	if result.Success != true {
+		err = errors.New(fmt.Sprintf("Cannot withdraw: %s", result.Reason))
+	}
+	return result.ID, nil
 }
 
 func (self *Verification) VerifyDeposit() error {
@@ -190,32 +199,36 @@ func (self *Verification) VerifyDeposit() error {
 	token := "ETH"
 	amount := hexutil.EncodeUint64(1)
 	// deposit to exchanges
-	log.Println("Start deposit to exchanges")
+	Info.Println("Start deposit to exchanges")
 	for _, exchange := range self.exchanges {
 		activityID, err := self.Deposit(exchange, token, amount, timepoint)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Cannot deposit: %s", err.Error()))
+			Error.Println(err.Error())
+			return err
 		}
-		log.Printf("Deposit id: %s", activityID)
+		Info.Printf("Deposit id: %s", activityID)
 		// check deposit data from api
 		// pending activities
 		pendingActivities, err := self.GetPendingActivities(timepoint)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Deposit error, getting pending activities: %s", err.Error()))
+			Error.Println(err.Error())
+			return err
 		}
-		log.Printf("Pending activities after deposit: %v", pendingActivities)
+		Info.Printf("Pending activities after deposit: %v", pendingActivities)
 		// authdata
 		authData, err := self.GetAuthData(timepoint)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Deposit error, geting authdata: %s", err.Error()))
+			Error.Println(err.Error())
+			return err
 		}
-		log.Printf("Auth data after deposit: %v", authData)
+		Info.Printf("Auth data after deposit: %v", authData)
 		// activities
 		activities, err := self.GetActivities(timepoint)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Deposit error, getting activities: %s", err.Error()))
+			Error.Println(err.Error())
+			return err
 		}
-		log.Printf("Activity data after deposit: %v", activities)
+		Info.Printf("Activity data after deposit: %v", activities)
 	}
 	return err
 }
@@ -228,45 +241,41 @@ func (self *Verification) VerifyWithdraw() error {
 	for _, exchange := range self.exchanges {
 		activityID, err := self.Withdraw(exchange, token, amount, timepoint)
 		if err != nil {
-			log.Printf("Cannot withdraw: %s", err.Error())
+			Error.Println(err.Error())
+			return err
 		}
-		log.Printf("Withdraw ID: %s", activityID)
+		Info.Printf("Withdraw ID: %s", activityID)
 		// check withdraw data from api
 		// pending activities
 		pendingActivities, err := self.GetPendingActivities(timepoint)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Withdraw error, getting pending activities: %s", err.Error()))
+			Error.Println(err.Error())
+			return err
 		}
-		log.Printf("Pending activities after withdraw: %v", pendingActivities)
+		Info.Printf("Pending activities after withdraw: %v", pendingActivities)
 		// authdata
 		authdata, err := self.GetAuthData(timepoint)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Withdraw error, getting auth data: %s", err.Error()))
+			Error.Println(err.Error())
+			return err
 		}
-		log.Printf("Auth data after withdraw: %s", authdata)
+		Info.Printf("Auth data after withdraw: %s", authdata)
 		// activities
 		activities, err := self.GetActivities(timepoint)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Withdraw error, getting activities: %s", err.Error()))
+			Error.Println(err.Error())
+			return err
 		}
-		log.Printf("Activities after withdraw: %v", activities)
+		Info.Printf("Activities after withdraw: %v", activities)
 	}
 	return err
 }
 
-func (self *Verification) RunVerification() error {
-	log.Println("Start verification")
-	var err error
-	err = self.VerifyDeposit()
-	if err != nil {
-		log.Printf(err.Error())
-	}
-	// err = self.VerifyWithdraw(amount)
-	// if err != nil {
-	// 	log.Printf(err.Error())
-	// }
-	// log.Printf("Verify deployment successfully")
-	return err
+func (self *Verification) RunVerification() {
+	InitLogger(ioutil.Discard, os.Stdout, os.Stdout, os.Stderr)
+	Info.Println("Start verification")
+	// self.VerifyDeposit()
+	self.VerifyWithdraw()
 }
 
 func NewVerification(
