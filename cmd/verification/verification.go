@@ -264,6 +264,16 @@ func (self *Verification) VerifyWithdraw() error {
 			return err
 		}
 		Info.Printf("Pending activities after withdraw: %v", pendingActivities)
+		available := false
+		for _, pending := range pendingActivities {
+			if pending.ID == activityID {
+				available = true
+				break
+			}
+		}
+		if !available {
+			Error.Println("Withdraw activity did not store")
+		}
 		// authdata
 		authdata, err := self.GetAuthData(timepoint)
 		if err != nil {
