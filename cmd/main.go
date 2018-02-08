@@ -142,7 +142,6 @@ func main() {
 		)
 		app.Run()
 		core := core.NewReserveCore(bc, config.ActivityStorage, config.ReserveAddress)
-		log.Println("Init server")
 		server := http.NewHTTPServer(
 			app, core,
 			config.MetricStorage,

@@ -102,8 +102,8 @@ func (self *Verification) GetResponse(
 	}
 }
 
-func (self *Verification) GetPendingActivities(timepoint uint64) (common.ActivityRecord, error) {
-	result := common.ActivityRecord{}
+func (self *Verification) GetPendingActivities(timepoint uint64) ([]common.ActivityRecord, error) {
+	result := []common.ActivityRecord{}
 	resp_body, err := self.GetResponse(
 		"GET",
 		BASE_URL+"/immediate-pending-activities",
@@ -215,6 +215,17 @@ func (self *Verification) VerifyDeposit() error {
 			return err
 		}
 		Info.Printf("Pending activities after deposit: %v", pendingActivities)
+		// check if activities available in pending
+		available := false
+		for _, pending := range pendingActivities {
+			if pending.ID == activityID {
+				available = true
+				break
+			}
+		}
+		if !available {
+			Error.Println("Deposit activity did not store")
+		}
 		// authdata
 		authData, err := self.GetAuthData(timepoint)
 		if err != nil {
@@ -274,8 +285,8 @@ func (self *Verification) VerifyWithdraw() error {
 func (self *Verification) RunVerification() {
 	InitLogger(ioutil.Discard, os.Stdout, os.Stdout, os.Stderr)
 	Info.Println("Start verification")
-	// self.VerifyDeposit()
-	self.VerifyWithdraw()
+	self.VerifyDeposit()
+	// self.VerifyWithdraw()
 }
 
 func NewVerification(
