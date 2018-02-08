@@ -468,22 +468,15 @@ func (self *Binance) OrderStatus(id common.ActivityID, timepoint uint64) (string
 	}
 }
 
-func NewBinance(interf BinanceInterface) *Binance {
+func NewBinance(addressConfig map[string]string, interf BinanceInterface) *Binance {
+	pairs := []common.TokenPair{}
+	for tokenID, _ := range addressConfig {
+		pair := common.MustCreateTokenPair(tokenID, "ETH")
+		pairs = append(pairs, pair)
+	}
 	return &Binance{
 		interf,
-		[]common.TokenPair{
-			common.MustCreateTokenPair("OMG", "ETH"),
-			common.MustCreateTokenPair("KNC", "ETH"),
-			common.MustCreateTokenPair("EOS", "ETH"),
-			common.MustCreateTokenPair("SNT", "ETH"),
-			// common.MustCreateTokenPair("SALT", "ETH"),
-			common.MustCreateTokenPair("ELF", "ETH"),
-			common.MustCreateTokenPair("POWR", "ETH"),
-			common.MustCreateTokenPair("MANA", "ETH"),
-			common.MustCreateTokenPair("BAT", "ETH"),
-			common.MustCreateTokenPair("REQ", "ETH"),
-			common.MustCreateTokenPair("GTO", "ETH"),
-		},
+		pairs,
 		common.NewExchangeAddresses(),
 		common.NewExchangeInfo(),
 		common.NewExchangeFee(

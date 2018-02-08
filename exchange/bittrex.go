@@ -400,13 +400,15 @@ func (self *Bittrex) FetchTradeHistory(timepoint uint64) (map[common.TokenPairID
 	return result, nil
 }
 
-func NewBittrex(interf BittrexInterface, storage BittrexStorage) *Bittrex {
+func NewBittrex(addressConfig map[string]string, interf BittrexInterface, storage BittrexStorage) *Bittrex {
+	pairs := []common.TokenPair{}
+	for tokenID, _ := range addressConfig {
+		pair := common.MustCreateTokenPair(tokenID, "ETH")
+		pairs = append(pairs, pair)
+	}
 	return &Bittrex{
 		interf,
-		[]common.TokenPair{
-			common.MustCreateTokenPair("OMG", "ETH"),
-			common.MustCreateTokenPair("SNT", "ETH"),
-		},
+		pairs,
 		common.NewExchangeAddresses(),
 		storage,
 		common.NewExchangeInfo(),
